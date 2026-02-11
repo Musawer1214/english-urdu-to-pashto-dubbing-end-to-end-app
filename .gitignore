@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+.pytest_cache/
+.mypy_cache/
+
+# Virtual environment
+.venv/
+venv/
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Logs and runtime artifacts
+logs/
+*.log
+temp/
+outputs/
+
+# Large model/checkpoint assets
+models/
+
+# External heavy assets and repos (download separately)
+external/
+
+# Bundled binaries (prefer local install instructions)
+tools/
+
+# Media artifacts
+*.mp4
+*.mkv
+*.mov
+*.avi
+*.wav
+*.mp3
+*.flac
+*.srt
+
+# Optional notebook/junk
+*.ipynb_checkpoints
