@@ -5,6 +5,7 @@ from pathlib import Path
 import socket
 import tempfile
 import time
+import threading
 
 import librosa
 import numpy as np
@@ -12,7 +13,7 @@ import numpy as np
 from .config import PipelineConfig, get_base_env, get_espeak_exe, get_ffmpeg_exe, get_python_exe
 from .ffmpeg_utils import probe_duration_seconds, time_stretch_audio_to_target
 from .seamless_service import TextSegment
-from .utils import LogFn, run_command
+from .utils import LogFn, PipelineCancelledError, run_command
 
 
 class PashtoTTSService:
@@ -24,6 +25,11 @@ class PashtoTTSService:
     def _log(self, msg: str) -> None:
         if self.log_fn:
             self.log_fn(msg)
+
+    @staticmethod
+    def _ensure_not_cancelled(cancel_event: threading.Event | None) -> None:
+        if cancel_event is not None and cancel_event.is_set():
+            raise PipelineCancelledError("Operation cancelled by user.")
 
     @staticmethod
     def _is_near_silent(wav_path: Path) -> bool:
@@ -89,7 +95,12 @@ class PashtoTTSService:
                 dedup.append(voice)
         return dedup
 
-    def _synthesize_edge_tts_to_wav(self, text: str, out_wav: Path) -> None:
+    def _synthesize_edge_tts_to_wav(
+        self,
+        text: str,
+        out_wav: Path,
+        cancel_event: threading.Event | None = None,
+    ) -> None:
         clean_text = " ".join((text or "").strip().split())
         if not clean_text:
             raise RuntimeError("Empty text passed to TTS.")
@@ -107,6 +118,7 @@ class PashtoTTSService:
             text_file = Path(td) / "edge_input.txt"
             text_file.write_text(clean_text, encoding="utf-8")
             for idx, (voice, proxy, round_idx) in enumerate(attempts, start=1):
+                self._ensure_not_cancelled(cancel_event)
                 try:
                     mp3_path = Path(td) / f"tts_{idx}.mp3"
                     if mp3_path.exists():
@@ -127,7 +139,7 @@ class PashtoTTSService:
                     ]
                     if proxy:
                         edge_cmd.extend(["--proxy", proxy])
-                    run_command(edge_cmd, env=get_base_env(), log_fn=self.log_fn)
+                    run_command(edge_cmd, env=get_base_env(), log_fn=self.log_fn, cancel_event=cancel_event)
                     if not mp3_path.exists() or mp3_path.stat().st_size < 2048:
                         raise RuntimeError("edge-tts output mp3 missing or too small.")
                     cmd = [
@@ -143,7 +155,7 @@ class PashtoTTSService:
                         "pcm_s16le",
                         str(out_wav),
                     ]
-                    run_command(cmd, env=get_base_env(), log_fn=self.log_fn)
+                    run_command(cmd, env=get_base_env(), log_fn=self.log_fn, cancel_event=cancel_event)
                     duration_s = probe_duration_seconds(out_wav)
                     if duration_s < 0.18:
                         raise RuntimeError(f"Generated edge-tts audio was too short ({duration_s:.2f}s).")
@@ -159,7 +171,12 @@ class PashtoTTSService:
                     time.sleep(1.0 + 0.7 * round_idx)
         raise RuntimeError(f"Edge TTS failed after retries: {last_exc}")
 
-    def _synthesize_espeak_to_wav(self, text: str, out_wav: Path) -> None:
+    def _synthesize_espeak_to_wav(
+        self,
+        text: str,
+        out_wav: Path,
+        cancel_event: threading.Event | None = None,
+    ) -> None:
         clean_text = " ".join((text or "").strip().split())
         if not clean_text:
             raise RuntimeError("Empty text passed to TTS.")
@@ -171,28 +188,40 @@ class PashtoTTSService:
             str(out_wav),
             clean_text,
         ]
-        run_command(cmd, env=get_base_env(), log_fn=self.log_fn)
+        run_command(cmd, env=get_base_env(), log_fn=self.log_fn, cancel_event=cancel_event)
         if self._is_near_silent(out_wav):
             raise RuntimeError("Generated eSpeak audio was near-silent.")
 
-    def _synthesize_to_wav(self, text: str, out_wav: Path) -> None:
+    def _synthesize_to_wav(
+        self,
+        text: str,
+        out_wav: Path,
+        cancel_event: threading.Event | None = None,
+    ) -> None:
         backend = self.cfg.tts_backend.lower().strip()
         if backend == "edge_tts":
-            self._synthesize_edge_tts_to_wav(text, out_wav)
+            self._synthesize_edge_tts_to_wav(text, out_wav, cancel_event=cancel_event)
             return
-        self._synthesize_espeak_to_wav(text, out_wav)
+        self._synthesize_espeak_to_wav(text, out_wav, cancel_event=cancel_event)
 
-    def synthesize_segments(self, segments: list[TextSegment], out_wav: Path, temp_dir: Path) -> None:
+    def synthesize_segments(
+        self,
+        segments: list[TextSegment],
+        out_wav: Path,
+        temp_dir: Path,
+        cancel_event: threading.Event | None = None,
+    ) -> None:
         temp_dir.mkdir(parents=True, exist_ok=True)
         chunk_files: list[Path] = []
 
         for idx, seg in enumerate(segments, start=1):
+            self._ensure_not_cancelled(cancel_event)
             self._log(f"TTS chunk {idx}/{len(segments)}")
             raw_wav = temp_dir / f"tts_raw_{idx:04d}.wav"
             fit_wav = temp_dir / f"tts_fit_{idx:04d}.wav"
-            self._synthesize_to_wav(seg.text, raw_wav)
+            self._synthesize_to_wav(seg.text, raw_wav, cancel_event=cancel_event)
             target_len = max(0.25, seg.end_s - seg.start_s)
-            time_stretch_audio_to_target(raw_wav, fit_wav, target_len, log_fn=self.log_fn)
+            time_stretch_audio_to_target(raw_wav, fit_wav, target_len, log_fn=self.log_fn, cancel_event=cancel_event)
             chunk_files.append(fit_wav)
 
         list_file = temp_dir / "concat_list.txt"
@@ -216,4 +245,4 @@ class PashtoTTSService:
             "pcm_s16le",
             str(out_wav),
         ]
-        run_command(cmd, env=get_base_env(), log_fn=self.log_fn)
+        run_command(cmd, env=get_base_env(), log_fn=self.log_fn, cancel_event=cancel_event)

@@ -15,3 +15,4 @@ scipy==1.14.1
 huggingface-hub==0.36.2
 hf_xet==1.2.0
 edge-tts==7.2.7
+customtkinter==5.2.2

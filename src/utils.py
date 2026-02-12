@@ -2,13 +2,19 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 from pathlib import Path
+from queue import Empty, Queue
 import shutil
 import subprocess
+import threading
 from typing import Callable, Iterable
 
 
 LogFn = Callable[[str], None]
 ProgressFn = Callable[[float, str], None]
+
+
+class PipelineCancelledError(Exception):
+    pass
 
 
 def noop_log(_: str) -> None:
@@ -25,6 +31,7 @@ def run_command(
     cwd: Path | None = None,
     env: dict[str, str] | None = None,
     log_fn: LogFn | None = None,
+    cancel_event: threading.Event | None = None,
 ) -> None:
     logger = log_fn or noop_log
     process = subprocess.Popen(
@@ -39,11 +46,58 @@ def run_command(
         bufsize=1,
     )
     assert process.stdout is not None
-    for line in process.stdout:
-        line = line.rstrip()
-        if line:
-            logger(line)
+
+    output_queue: Queue[str | None] = Queue()
+
+    def _reader() -> None:
+        assert process.stdout is not None
+        for raw_line in process.stdout:
+            output_queue.put(raw_line.rstrip())
+        output_queue.put(None)
+
+    reader_thread = threading.Thread(target=_reader, daemon=True)
+    reader_thread.start()
+
+    cancelled = False
+    while True:
+        try:
+            line = output_queue.get(timeout=0.12)
+            if line is None:
+                break
+            if line:
+                logger(line)
+        except Empty:
+            pass
+
+        if cancel_event is not None and cancel_event.is_set():
+            cancelled = True
+            break
+
+    if cancelled:
+        try:
+            subprocess.run(
+                ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        except Exception:
+            try:
+                process.terminate()
+            except Exception:
+                pass
+        try:
+            process.wait(timeout=2.0)
+        except Exception:
+            try:
+                process.kill()
+            except Exception:
+                pass
+        reader_thread.join(timeout=1.0)
+        raise PipelineCancelledError("Operation cancelled by user.")
+
     return_code = process.wait()
+    reader_thread.join(timeout=1.0)
     if return_code != 0:
         cmd_text = " ".join(command)
         raise RuntimeError(f"Command failed ({return_code}): {cmd_text}")
@@ -72,4 +126,3 @@ def clean_and_mkdir(path: Path) -> None:
     if path.exists():
         shutil.rmtree(path, ignore_errors=True)
     path.mkdir(parents=True, exist_ok=True)
-

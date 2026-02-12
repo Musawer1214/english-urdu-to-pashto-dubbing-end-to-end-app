@@ -5,6 +5,7 @@ from difflib import SequenceMatcher
 import json
 from pathlib import Path
 import re
+import threading
 from typing import Callable
 
 import librosa
@@ -13,7 +14,7 @@ import torch
 from transformers import AutoProcessor, SeamlessM4Tv2ForSpeechToText, SeamlessM4Tv2ForTextToText
 
 from .config import HF_CACHE_DIR, PipelineConfig
-from .utils import ProgressFn, write_srt
+from .utils import PipelineCancelledError, ProgressFn, write_srt
 
 
 @dataclass(slots=True)
@@ -44,6 +45,11 @@ class SeamlessTranslator:
         self.processor = None
         self.device = self._resolve_device(cfg.device_policy)
         self.term_replacements = self._load_term_replacements()
+
+    @staticmethod
+    def _ensure_not_cancelled(cancel_event: threading.Event | None) -> None:
+        if cancel_event is not None and cancel_event.is_set():
+            raise PipelineCancelledError("Operation cancelled by user.")
 
     @staticmethod
     def _resolve_device(policy: str) -> str:
@@ -176,7 +182,14 @@ class SeamlessTranslator:
         if self.device == "cuda":
             torch.cuda.empty_cache()
 
-    def _speech_to_text(self, chunk_audio: np.ndarray, tgt_lang: str, max_new_tokens: int = 240) -> str:
+    def _speech_to_text(
+        self,
+        chunk_audio: np.ndarray,
+        tgt_lang: str,
+        max_new_tokens: int = 240,
+        cancel_event: threading.Event | None = None,
+    ) -> str:
+        self._ensure_not_cancelled(cancel_event)
         assert self.speech_model is not None and self.processor is not None
         model_inputs = self.processor(audios=chunk_audio, sampling_rate=16000, return_tensors="pt")
         model_inputs = {k: v.to(self.device) for k, v in model_inputs.items()}
@@ -190,9 +203,18 @@ class SeamlessTranslator:
         text = self.processor.decode(outputs[0].tolist(), skip_special_tokens=True).strip()
         del model_inputs, outputs
         self._cleanup_device()
+        self._ensure_not_cancelled(cancel_event)
         return text
 
-    def _text_to_text(self, text: str, src_lang: str, tgt_lang: str, max_new_tokens: int = 220) -> str:
+    def _text_to_text(
+        self,
+        text: str,
+        src_lang: str,
+        tgt_lang: str,
+        max_new_tokens: int = 220,
+        cancel_event: threading.Event | None = None,
+    ) -> str:
+        self._ensure_not_cancelled(cancel_event)
         assert self.text_model is not None and self.processor is not None
         clean_text = (text or "").strip()
         if not clean_text:
@@ -209,9 +231,16 @@ class SeamlessTranslator:
         out_text = self.processor.decode(outputs[0].tolist(), skip_special_tokens=True).strip()
         del model_inputs, outputs
         self._cleanup_device()
+        self._ensure_not_cancelled(cancel_event)
         return out_text
 
-    def _detect_source_language(self, samples: np.ndarray, chunk_size: int) -> str:
+    def _detect_source_language(
+        self,
+        samples: np.ndarray,
+        chunk_size: int,
+        cancel_event: threading.Event | None = None,
+    ) -> str:
+        self._ensure_not_cancelled(cancel_event)
         preferred = (self.cfg.source_lang or "auto").strip().lower()
         if preferred in {"eng", "urd"}:
             self.log_fn(f"Using user-selected source language: {preferred}")
@@ -222,8 +251,8 @@ class SeamlessTranslator:
             self.log_fn("Source language auto-detect fallback: audio probe too short, using 'eng'.")
             return "eng"
 
-        eng_text = self._speech_to_text(probe, "eng")
-        urd_text = self._speech_to_text(probe, "urd")
+        eng_text = self._speech_to_text(probe, "eng", cancel_event=cancel_event)
+        urd_text = self._speech_to_text(probe, "urd", cancel_event=cancel_event)
         eng_score = self._english_likeness(eng_text)
         urd_score = self._urdu_likeness(urd_text)
         eng_latin = self._latin_ratio(eng_text)
@@ -276,7 +305,9 @@ class SeamlessTranslator:
         output_srt: Path,
         output_text: Path,
         progress_fn: ProgressFn,
+        cancel_event: threading.Event | None = None,
     ) -> TranslationArtifacts:
+        self._ensure_not_cancelled(cancel_event)
         self._load_speech_once()
         assert self.speech_model is not None and self.processor is not None
 
@@ -296,7 +327,7 @@ class SeamlessTranslator:
         total_duration = float(len(samples)) / 16000.0
         chunk_size = int(self.cfg.chunk_seconds * 16000)
         chunk_size = max(chunk_size, 4 * 16000)
-        source_lang = self._detect_source_language(samples, chunk_size)
+        source_lang = self._detect_source_language(samples, chunk_size, cancel_event=cancel_event)
 
         segments: list[TextSegment] = []
         translated_lines: list[str] = []
@@ -304,6 +335,7 @@ class SeamlessTranslator:
         starts = list(range(0, len(samples), chunk_size))
         chunk_count = len(starts)
         for idx, start in enumerate(starts, start=1):
+            self._ensure_not_cancelled(cancel_event)
             end = min(start + chunk_size, len(samples))
             source_chunk = samples[start:end].astype("float32", copy=False)
             if source_chunk.shape[0] < 400:
@@ -313,8 +345,8 @@ class SeamlessTranslator:
 
             progress_fn((idx - 1) / max(1, chunk_count), f"Translating chunk {idx}/{chunk_count}")
 
-            source_text = self._speech_to_text(source_chunk, source_lang)
-            direct_pashto = self._speech_to_text(source_chunk, target_lang)
+            source_text = self._speech_to_text(source_chunk, source_lang, cancel_event=cancel_event)
+            direct_pashto = self._speech_to_text(source_chunk, target_lang, cancel_event=cancel_event)
 
             chosen = direct_pashto
             score = 1.0
@@ -322,9 +354,9 @@ class SeamlessTranslator:
 
             if verify_enabled and self.text_model is not None:
                 try:
-                    t2t_pashto = self._text_to_text(source_text, source_lang, target_lang)
-                    back_direct = self._text_to_text(direct_pashto, target_lang, source_lang)
-                    back_t2t = self._text_to_text(t2t_pashto, target_lang, source_lang)
+                    t2t_pashto = self._text_to_text(source_text, source_lang, target_lang, cancel_event=cancel_event)
+                    back_direct = self._text_to_text(direct_pashto, target_lang, source_lang, cancel_event=cancel_event)
+                    back_t2t = self._text_to_text(t2t_pashto, target_lang, source_lang, cancel_event=cancel_event)
 
                     score_direct = self._similarity(source_text, back_direct)
                     score_t2t = self._similarity(source_text, back_t2t)

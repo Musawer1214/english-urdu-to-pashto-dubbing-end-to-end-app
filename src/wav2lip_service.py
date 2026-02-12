@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 import shutil
+import threading
 
 from .config import WAV2LIP_MODELS_DIR, WAV2LIP_REPO_DIR, get_base_env, get_python_exe
-from .utils import LogFn, run_command
+from .utils import LogFn, PipelineCancelledError, run_command
 
 
 class Wav2LipRunner:
@@ -42,6 +43,7 @@ class Wav2LipRunner:
         output_video: Path,
         device_policy: str,
         dominant_box: tuple[int, int, int, int] | None = None,
+        cancel_event: threading.Event | None = None,
     ) -> None:
         checkpoint = self.ensure_assets()
         output_video.parent.mkdir(parents=True, exist_ok=True)
@@ -69,6 +71,8 @@ class Wav2LipRunner:
         )
         last_exc: Exception | None = None
         for i, extra in enumerate(attempts, start=1):
+            if cancel_event is not None and cancel_event.is_set():
+                raise PipelineCancelledError("Operation cancelled by user.")
             cmd = [
                 get_python_exe(),
                 "inference.py",
@@ -88,7 +92,7 @@ class Wav2LipRunner:
             ]
             self._log(f"Running Wav2Lip inference (attempt {i}/{len(attempts)})...")
             try:
-                run_command(cmd, cwd=WAV2LIP_REPO_DIR, env=env, log_fn=self.log_fn)
+                run_command(cmd, cwd=WAV2LIP_REPO_DIR, env=env, log_fn=self.log_fn, cancel_event=cancel_event)
                 self._log("Wav2Lip inference complete.")
                 return
             except Exception as exc:

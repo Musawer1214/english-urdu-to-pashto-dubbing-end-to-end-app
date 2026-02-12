@@ -5,12 +5,19 @@ import math
 import shutil
 import subprocess
 from pathlib import Path
+import threading
 
 from .config import get_base_env, get_ffmpeg_exe, get_ffprobe_exe
 from .utils import LogFn, run_command
 
 
-def extract_mono_wav(video_path: Path, out_wav: Path, sample_rate: int = 16000, log_fn: LogFn | None = None) -> None:
+def extract_mono_wav(
+    video_path: Path,
+    out_wav: Path,
+    sample_rate: int = 16000,
+    log_fn: LogFn | None = None,
+    cancel_event: threading.Event | None = None,
+) -> None:
     out_wav.parent.mkdir(parents=True, exist_ok=True)
     cmd = [
         get_ffmpeg_exe(),
@@ -26,7 +33,7 @@ def extract_mono_wav(video_path: Path, out_wav: Path, sample_rate: int = 16000, 
         "pcm_s16le",
         str(out_wav),
     ]
-    run_command(cmd, env=get_base_env(), log_fn=log_fn)
+    run_command(cmd, env=get_base_env(), log_fn=log_fn, cancel_event=cancel_event)
 
 
 def probe_duration_seconds(media_path: Path) -> float:
@@ -68,6 +75,7 @@ def time_stretch_audio_to_target(
     *,
     tolerance_s: float = 0.35,
     log_fn: LogFn | None = None,
+    cancel_event: threading.Event | None = None,
 ) -> tuple[float, float]:
     src_duration = probe_duration_seconds(input_wav)
     if target_duration_s <= 0:
@@ -95,7 +103,7 @@ def time_stretch_audio_to_target(
         "pcm_s16le",
         str(output_wav),
     ]
-    run_command(cmd, env=get_base_env(), log_fn=log_fn)
+    run_command(cmd, env=get_base_env(), log_fn=log_fn, cancel_event=cancel_event)
     out_duration = probe_duration_seconds(output_wav)
     return src_duration, out_duration
 
@@ -105,6 +113,7 @@ def mux_audio_with_video(
     input_audio_wav: Path,
     output_video: Path,
     log_fn: LogFn | None = None,
+    cancel_event: threading.Event | None = None,
 ) -> None:
     output_video.parent.mkdir(parents=True, exist_ok=True)
     cmd = [
@@ -125,4 +134,4 @@ def mux_audio_with_video(
         "-shortest",
         str(output_video),
     ]
-    run_command(cmd, env=get_base_env(), log_fn=log_fn)
+    run_command(cmd, env=get_base_env(), log_fn=log_fn, cancel_event=cancel_event)
