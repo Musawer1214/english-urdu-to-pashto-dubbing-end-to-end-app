@@ -1,5 +1,19 @@
 # Pashto Video Dubbing Desktop App - Project Report
 
+## 0. Repository Alignment Snapshot (February 12, 2026)
+
+- GitHub remote: `origin` -> `https://github.com/Musawer1214/english-urdu-to-pashto-dubbing-end-to-end-app.git`
+- Active release baseline: tag `v1`
+- Documentation baseline includes:
+  - `README.md`
+  - `PROJECT_REPORT.md`
+  - `CONTRIBUTING.md`
+  - `ROADMAP.md`
+  - `issues/2026-02-11-issue-add-pashto-terminology-database.md`
+- Repo root for this project is the `App/` folder (commands in docs assume this root).
+
+---
+
 ## 1. Project Overview
 
 ### 1.1 Mission
@@ -173,15 +187,18 @@ For each run, the app generates:
 
 ## 7. Testing and Validation Status
 
-### 7.1 Executed Practical Tests
-- Short Urdu sample pipeline runs
-- Short English sample pipeline runs
-- Full Urdu test video run
-- Runtime checks confirmed non-silent audio in recent outputs
-- Compile checks executed for updated Python modules
+### 7.1 Baseline Verification Commands
+- Compile sanity check:
+  - `.\.venv\Scripts\python.exe -m compileall .\src .\run_pipeline.py .\run_gui.py`
+- Seamless local model presence check:
+  - `.\.venv\Scripts\python.exe .\scripts\verify_seamless_local.py`
+- CLI option check:
+  - `.\.venv\Scripts\python.exe .\run_pipeline.py --help`
+- GUI startup check:
+  - `.\.venv\Scripts\python.exe .\run_gui.py`
 
 ### 7.2 Output Location Pattern
-- `App/outputs/<input_name>_pashto_<timestamp>/`
+- `outputs/<input_name>_pashto_<timestamp>/`
 - Final file will be either:
   - `<input_name>_pashto_lipsync.mp4` (if gate + lip-sync pass)
   - `<input_name>_pashto_dubbed.mp4` (safe fallback)
