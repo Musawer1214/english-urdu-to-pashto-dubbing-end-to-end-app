@@ -1,55 +1,55 @@
-# English/Urdu to Pashto Dubbing End-to-End App
+# 🎬 English/Urdu to Pashto Dubbing End-to-End App
 
-Windows desktop app to translate spoken English/Urdu videos into Pashto and generate dubbed output in one pipeline.
+🖥️ Windows desktop app to translate spoken English/Urdu videos into Pashto and generate dubbed output in one pipeline.
 
-## Current baseline (v1)
+## 🚀 Current baseline (v1)
 
-- Input: video (`.mp4`, `.mkv`, `.mov`, `.avi`)
-- Translation target: Pashto (`pbt`) via SeamlessM4T
-- TTS: Pashto neural voices via `edge-tts` (with fallback handling)
-- Output:
+- 🎞️ Input: video (`.mp4`, `.mkv`, `.mov`, `.avi`)
+- 🌐 Translation target: Pashto (`pbt`) via SeamlessM4T
+- 🗣️ TTS: Pashto neural voices via `edge-tts` (with fallback handling)
+- 📦 Output:
   - `*_pashto_lipsync.mp4` (when lip-sync gate and Wav2Lip succeed), or
   - `*_pashto_dubbed.mp4` (safe fallback mux)
   - `pashto_translation.srt`
   - `pashto_translation.txt`
   - `pipeline.log`
 
-## Features in this release
+## ✨ Features in this release
 
-- CPU-first default, optional CUDA mode (`auto|cpu|cuda`)
-- Source language mode (`auto|eng|urd`)
-- Voice gender mode (`auto|male|female`) with source-speaker pitch hinting
-- Chunked translation with optional round-trip verification
-- Term overrides via `configs/term_overrides.json`
-- Lip-sync safety gate with fallback export when conditions are not suitable
+- ⚙️ CPU-first default, optional CUDA mode (`auto|cpu|cuda`)
+- 🧭 Source language mode (`auto|eng|urd`)
+- 👤 Voice gender mode (`auto|male|female`) with source-speaker pitch hinting
+- 🧩 Chunked translation with optional round-trip verification
+- 📝 Term overrides via `configs/term_overrides.json`
+- 🛡️ Lip-sync safety gate with fallback export when conditions are not suitable
 
-## Tech stack
+## 🧠 Tech stack
 
-- Translation: `facebook/seamless-m4t-v2-large`
-- TTS: `edge-tts` (`ps-AF-*` voices)
-- Lip sync: Wav2Lip
-- Media processing: FFmpeg / FFprobe
-- GUI: Tkinter
+- 🌐 Translation: `facebook/seamless-m4t-v2-large`
+- 🔊 TTS: `edge-tts` (`ps-AF-*` voices)
+- 👄 Lip sync: Wav2Lip
+- 🎛️ Media processing: FFmpeg / FFprobe
+- 🪟 GUI: Tkinter
 
-## Repository notes
+## 📚 Repository notes
 
-- The Git repository root is this `App/` folder.
-- Heavy files are intentionally excluded from git: models, generated outputs, local venv, external repos, binaries, test media.
-- Additional project docs:
+- 📁 The Git repository root is this `App/` folder.
+- 🧳 Heavy files are intentionally excluded from git: models, generated outputs, local venv, external repos, binaries, test media.
+- 📄 Additional project docs:
   - `PROJECT_REPORT.md`
   - `ROADMAP.md`
   - `CONTRIBUTING.md`
 
-## Setup (Windows)
+## 🛠️ Setup (Windows)
 
-### 1) Clone and enter repo
+### 1) 📥 Clone and enter repo
 
 ```powershell
-git clone https://github.com/Musawer1214/english-urdu-to-pashto-dubbing-end-to-end-app.git
-cd english-urdu-to-pashto-dubbing-end-to-end-app
+git clone https://github.com/Musawer1214/English-Urdu-to-Pashto-dubbing-end-to-end-app.git
+cd English-Urdu-to-Pashto-dubbing-end-to-end-app
 ```
 
-### 2) Create venv and install dependencies
+### 2) 🐍 Create venv and install dependencies
 
 Preferred:
 
@@ -66,17 +66,17 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r .\requirements.txt
 ```
 
-### 3) Install FFmpeg
+### 3) 🎞️ Install FFmpeg
 
-Option A (recommended):
+Option A ✅ (recommended):
 - Install FFmpeg globally and ensure `ffmpeg` + `ffprobe` are on `PATH`.
 
-Option B:
+Option B 📁:
 - Place binaries in `tools/ffmpeg/bin/`:
   - `ffmpeg.exe`
   - `ffprobe.exe`
 
-### 4) Download local SeamlessM4T model files
+### 4) 🤖 Download local SeamlessM4T model files
 
 Create:
 - `models/seamless-m4t-v2-large/`
@@ -93,13 +93,13 @@ Download required files from `facebook/seamless-m4t-v2-large`:
 - `special_tokens_map.json`
 - `tokenizer_config.json`
 
-Verify local model folder:
+Verify local model folder ✅:
 
 ```powershell
 .\.venv\Scripts\python.exe .\scripts\verify_seamless_local.py
 ```
 
-### 5) Prepare Wav2Lip assets
+### 5) 👄 Prepare Wav2Lip assets
 
 Required:
 - Wav2Lip repository at `external/Wav2Lip`
@@ -107,15 +107,15 @@ Required:
   - `models/wav2lip/checkpoints/wav2lip_gan.pth`
   - `models/wav2lip/face_detection/detection/sfd/s3fd.pth`
 
-Download checkpoints:
+Download checkpoints ⬇️:
 
 ```powershell
 .\.venv\Scripts\python.exe .\scripts\download_models.py
 ```
 
-## Run
+## ▶️ Run
 
-### GUI
+### 🪟 GUI
 
 ```powershell
 .\.venv\Scripts\python.exe .\run_gui.py
@@ -127,13 +127,13 @@ or:
 .\start_gui.bat
 ```
 
-### CLI
+### ⌨️ CLI
 
 ```powershell
 .\.venv\Scripts\python.exe .\run_pipeline.py --input <path-to-video>
 ```
 
-Supported CLI options:
+Supported CLI options 🧾:
 - `--output-root <dir>`
 - `--device auto|cpu|cuda`
 - `--source-lang auto|eng|urd`
@@ -144,25 +144,25 @@ Supported CLI options:
 - `--voice-gender auto|male|female`
 - `--no-verify`
 
-## Output layout
+## 📤 Output layout
 
-Each run creates:
+Each run creates 🗂️:
 - `outputs/<video_name>_pashto_<timestamp>/`
 
-Artifacts inside that folder:
+Artifacts inside that folder 📌:
 - final video (`*_pashto_lipsync.mp4` or `*_pashto_dubbed.mp4`)
 - `pashto_translation.srt`
 - `pashto_translation.txt`
 - `pipeline.log`
 
-## Known limitations
+## ⚠️ Known limitations
 
-- Pashto quality depends on currently available translation/voice resources.
-- Wav2Lip can degrade on complex motion, profile faces, and occlusions.
-- Multi-speaker active-speaker targeting is partial and still evolving.
-- Cloud TTS requires stable internet access.
+- 🎯 Pashto quality depends on currently available translation/voice resources.
+- 🎥 Wav2Lip can degrade on complex motion, profile faces, and occlusions.
+- 👥 Multi-speaker active-speaker targeting is partial and still evolving.
+- 🌐 Cloud TTS requires stable internet access.
 
-## Ethical and license note
+## ⚖️ Ethical and license note
 
 Use dubbing/lip-sync responsibly and only where you have legal rights/permission to process the media.  
 Follow upstream model/tool licenses, especially Wav2Lip usage restrictions.
